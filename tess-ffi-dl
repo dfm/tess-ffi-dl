@@ -1,0 +1,140 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import os
+import re
+import shutil
+import logging
+import argparse
+from tempfile import NamedTemporaryFile
+from multiprocessing.pool import ThreadPool as Pool
+
+import tqdm
+import requests
+from astropy.io import fits
+
+
+script_url = "https://archive.stsci.edu/missions/tess/download_scripts/sector"
+script_url += "/tesscurl_sector_{0}_ffic.sh"
+
+
+def get_url_list(outdir, sector, camera=None, chip=None):
+    """Get the list of FFI URLs by fetching the MAST bulk download script"""
+
+    # Construct the regular expression pattern
+    pattern = "-s{0:04d}-".format(sector)
+    if camera is None:
+        pattern += "([1-4]+)-"
+    else:
+        pattern += "{0:d}-".format(camera)
+    if chip is None:
+        pattern += "([1-4]+)-"
+    else:
+        pattern += "{0:d}-".format(chip)
+    prog = re.compile(pattern)
+
+    # Download the bulk download script
+    r = requests.get(script_url.format(sector))
+    r.raise_for_status()
+
+    # Loop over lines in the script and construct the right filenames
+    urls = []
+    filenames = []
+    for line in r.text.splitlines():
+        if line.startswith("#"):
+            continue
+        if len(prog.findall(line)) == 0:
+            continue
+        line = line.strip()
+        fn, url = line.split()[-2:]
+        year = fn[4:8]
+        num = fn[8:11]
+        sector, chip, ccd = fn.split("-")[1:4]
+        path = "tess/ffi/{0}/{1}/{2}/{3}-{4}/{5}".format(sector, year, num,
+                                                         chip, ccd, fn)
+        urls.append(url)
+        filenames.append(os.path.join(outdir, path))
+
+    return urls, filenames
+
+
+def make_directories(filenames):
+    dirs = set(map(os.path.dirname, filenames))
+    for d in set(dirs):
+        os.makedirs(d, exist_ok=True)
+
+
+def download(args, clobber=True):
+    url, path = args
+    seed = os.path.split(path)[1]
+
+    if (not clobber) and os.path.exists(path):
+        return
+
+    # Download the file
+    r = requests.get(url)
+    r.raise_for_status()
+
+    # Atomically write to disk.
+    # http://stackoverflow.com/questions/2333872/ \
+    #        atomic-writing-to-file-with-python
+    f = NamedTemporaryFile("wb", delete=False, prefix=seed)
+    f.write(r.content)
+    f.flush()
+    os.fsync(f.fileno())
+    f.close()
+
+    try:
+        with fits.open(f.name) as hdus:
+            hdus[1].header
+    except Exception as e:
+        logging.warning("Download failed - trying again: ", url)
+        print(e)
+        download(args)
+        return
+
+    shutil.move(f.name, path)
+
+
+def download_all(urls, filenames, threads=100):
+    with Pool(threads) as pool:
+        gen = pool.imap_unordered(download, zip(urls, filenames))
+        with tqdm.tqdm(total=len(urls)) as pbar:
+            for value in gen:
+                pbar.update()
+
+
+def run(in_args):
+    parser = argparse.ArgumentParser(description="Download TESS FFIs")
+    parser.add_argument("outdir", help="The output directory for the files")
+    parser.add_argument("sector", type=int, help="The sector number")
+    parser.add_argument("--camera", default=None, type=int,
+                        help="The camera number")
+    parser.add_argument("--chip", type=int, default=None,
+                        help="The chip number")
+    parser.add_argument("--threads", type=int, default=100,
+                        help="The number of parallel threads to use")
+    args = parser.parse_args(args=in_args)
+
+    if not (args.camera is None or 1 <= args.camera <= 4):
+        raise ValueError("Camera number must be between 1 and 4")
+    if not (args.chip is None or 1 <= args.chip <= 4):
+        raise ValueError("Camera number must be between 1 and 4")
+
+    print("Getting the list of files from MAST...")
+    urls, filenames = get_url_list(
+        args.outdir, args.sector, camera=args.camera, chip=args.chip)
+    print("    found {0} files.".format(len(urls)))
+
+    print("Making directories with root '{0}'...".format(args.outdir))
+    make_directories(filenames)
+    print("    done.")
+
+    print("Downloading files...")
+    download_all(urls, filenames, threads=args.threads)
+    print("    done.")
+
+
+if __name__ == "__main__":
+    import sys
+    run(sys.argv[1:])
