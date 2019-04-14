@@ -13,11 +13,11 @@ This is a Python package so you'll need Python (tested on v3.6) and the followin
 To download all the FFIs for Sector 4 to the directory `data`:
 
 ```bash
-tess-ffi-dl data 4
+./tess-ffi-dl data 4
 ```
 
 You can also specify a camera and chip number as follows:
 
 ```bash
-tess-ffi-dl data 4 --camera=4 --chip=2
+./tess-ffi-dl data 4 --camera=4 --chip=2
 ```
