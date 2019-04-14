@@ -14,6 +14,10 @@ import tqdm
 import requests
 from astropy.io import fits
 
+# We want to catch warnings as exceptions because of corrupted files
+import warnings
+warnings.filterwarnings("error")
+
 
 script_url = "https://archive.stsci.edu/missions/tess/download_scripts/sector"
 script_url += "/tesscurl_sector_{0}_ffic.sh"
@@ -89,9 +93,8 @@ def download(args, clobber=False):
         with fits.open(f.name) as hdus:
             hdus[1].header
     except Exception as e:
-        logging.warning("Download failed - trying again: ", url)
-        print(e)
-        download(args)
+        print("Download failed - trying again: ", url)
+        download(args, clobber=clobber)
         return
 
     shutil.move(f.name, path)
