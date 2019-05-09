@@ -2,7 +2,7 @@ Download the TESS FFI files from MAST.
 
 ## Dependencies
 
-This is a Python package so you'll need Python (tested on v3.6) and the following dependancies:
+This is a Python package so you'll need Python (tested on v3.6) and the following dependencies:
 
 - [tqdm](https://tqdm.github.io)
 - [requests](http://docs.python-requests.org)
