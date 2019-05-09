@@ -4,11 +4,11 @@
 import os
 import re
 import shutil
-import logging
 import argparse
 from functools import partial
 from tempfile import NamedTemporaryFile
-from multiprocessing.pool import ThreadPool as Pool
+# from multiprocessing.pool import ThreadPool as Pool
+from multiprocessing import Pool
 
 import tqdm
 import requests
@@ -91,7 +91,8 @@ def download(args, clobber=False):
 
     try:
         with fits.open(f.name) as hdus:
-            hdus[1].header
+            for h in hdus:
+                h.header
     except Exception as e:
         print("Download failed - trying again: ", url)
         download(args, clobber=clobber)
